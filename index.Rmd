@@ -1,0 +1,7 @@
+---
+title: "Weight Lifting Exercise classification"
+author: "Geert Premereur"
+date: "January 24, 2016"
+output: html_document
+---
+
