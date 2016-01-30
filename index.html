@@ -92,6 +92,13 @@ img {
 <div id="selecting-a-model" class="section level3">
 <h3>Selecting a model</h3>
 <p>Intuition tells us that it is unlikely that some smooth algebraic formula on the features will be able to explain the type of exercise. Rather, the co-occurance of certain values seems more likely to have a determining role. Therefore, linear regression or even SVM’s probably won’t be as succesful as a decission tree. Also, a single decission tree won’t be able to capture the data variability, so a forest of trees seems to be required. Therefore, the random forest method is our first choice. If it does not have enough estimated predictive power, we can still look for other methods.</p>
+
+<pre class="r"><code>library(caret)
+require(randomForest)
+set.seed(12345)
+
+rfFit <- train(classe~., trainingClean[runif(length(training))>0.0, ], method="rf", trControl=trainControl(method="cv",number=10), prox=TRUE, allowParallel=FALSE)</code></pre>
+  
 <p>In order to use all of our training data and at the same having realistic accuracy estimates, we use cross validation. We use 10 folds as that generally is a good compromise to achieve acceptable bias and variance. Building the model took about 2 hours on my machine (2nd gen Core i7).</p>
 </div>
 <div id="evaluating-the-model" class="section level3">

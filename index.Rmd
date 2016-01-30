@@ -56,18 +56,12 @@ Given the high dimensionality of the data, making plots doesn't seem a fruitful 
 
 Intuition tells us that it is unlikely that some smooth algebraic formula on the features will be able to explain the type of exercise. Rather, the co-occurance of certain values seems more likely to have a determining role. Therefore, linear regression or even SVM's probably won't be as succesful as a decission tree. Also, a single decission tree won't be able to capture the data variability, so a forest of trees seems to be required. Therefore, the random forest method is our first choice. If it does not have enough estimated predictive power, we can still look for other methods.
 
-```{r, echo=FALSE, results='hide', message=FALSE}
+```{r, echo=TRUE, results='hide', message=FALSE}
 library(caret)
-#library(parallel)
-#library(doParallel)
 require(randomForest)
 set.seed(12345)
 
-# set up a cluster for faster computation 
-#cluster <- makeCluster(detectCores() - 3) # leave 2 cores for the OS
-#registerDoParallel(cluster)
 rfFit <- train(classe~., trainingClean[runif(length(training))>0.0, ], method="rf", trControl=trainControl(method="cv",number=10), prox=TRUE, allowParallel=FALSE)
-#stopCluster(cluster)
 ```
 
 In order to use all of our training data and at the same having realistic accuracy estimates, we use cross validation. We use 10 folds as that generally is a good compromise to achieve acceptable bias and variance. Building the model took about 2 hours on my machine (2nd gen Core i7).
