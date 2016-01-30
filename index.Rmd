@@ -5,3 +5,124 @@ date: "January 24, 2016"
 output: html_document
 ---
 
+## Introduction
+
+We use data from sensors attached to people performing weight lifting exercises and the equipment they handle. Participants were asked to perform a certain standardised exercise both using the proper technique and while making some typical errors.
+
+We'll be applying machine learning techniques to predict how well an exercise was performed using only sensor data.
+
+The dataset we used has been compiled by Wallace Ugulino, Eduardo Velloso & Hugo Fuks 
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. [Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201). Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+Due to requirements on the length of the document, much of the R commands are not shown in the html document. Please look at the [source markdown]("index.Rmd")  if you want to see and verify the details.
+
+## Data Exploration
+
+```{r, echo=FALSE, results='hide'}
+# Loading the data
+training <- read.csv("pml-training.csv")
+testing <- read.csv("pml-testing.csv")
+
+dims<- dim(training)
+```
+
+```{r, echo=FALSE}
+# Trimming columns
+emptyColsTest <- colSums(is.na(testing)) > nrow(testing)/2 # it just so happens to be that the class and the problem id columns align
+nonGeneralisableColumns <- emptyColsTest
+nonGeneralisableColumns[1:7] = TRUE
+trainingClean <- training[, !nonGeneralisableColumns]
+testingClean <- testing[ , !nonGeneralisableColumns]
+
+cleanDims<- dim(trainingClean)
+```
+
+The training data set contains `r dims[1]` rows and `r dims[2]` columns. However, many columns don't contain (useful) values. These are removed from the datasets. In fact, since the given test data set doesn't contain values in these columns either, there would be no point considering them in the training dataset anyway. This allows us to drop `r sum(emptyColsTest)` columns.
+
+Also, columns such as index, user name and timestamp should be removed. While they might help to get better performance on the test data set, they certainly won't be of any help when using the model we will build on completely new data. This leaves us with `r (cleanDims[2]-1)` features and one target value.
+
+Alas, a data dictionary for the dataset could not be found. The precise meaning of the columns is not immediately obvious. The most important open question is whether the remaining features are snapshots of the sensor measurements over time or rather statistical information computed in some fixed time window. So we have to make some assumptions.
+
+1. The timestamps for different participants show a quite different pattern (see the ['timestamps by index'](#patterns-in-the-time-component-of-the-data) plot) and are not contiguous. Measurements may be missing but or are more likely filtered. So, we don't have to, nor can we,  compute statistics concerning multiple rows. Furthermore, the test data set only contains a very limited set of rows for different users, so even if the training set would allow multi-row feature extraction, we couldn't apply that to the test data set.
+1. Given that there is no field that details the length of the sampling window, we assume that all values come from equal-length time windows.
+
+As a consequence of these assumtions about the data, we'll build a model to predict the type of measurement based on a single row of data and we'll use all rows in the training data set.
+
+Given the high dimensionality of the data, making plots doesn't seem a fruitful enterprise. Looking at feature corelation and extracting those with highest variance (e.g. using PCA) might be, but as there are no firm requirements on the performance of the final model, we'll feed all features to the machine learning algorithm.
+
+## Building a model
+
+### Selecting a model
+
+Intuition tells us that it is unlikely that some smooth algebraic formula on the features will be able to explain the type of exercise. Rather, the co-occurance of certain values seems more likely to have a determining role. Therefore, linear regression or even SVM's probably won't be as succesful as a decission tree. Also, a single decission tree won't be able to capture the data variability, so a forest of trees seems to be required. Therefore, the random forest method is our first choice. If it does not have enough estimated predictive power, we can still look for other methods.
+
+```{r, echo=FALSE, results='hide', message=FALSE}
+library(caret)
+#library(parallel)
+#library(doParallel)
+require(randomForest)
+set.seed(12345)
+
+# set up a cluster for faster computation 
+#cluster <- makeCluster(detectCores() - 3) # leave 2 cores for the OS
+#registerDoParallel(cluster)
+rfFit <- train(classe~., trainingClean[runif(length(training))>0.0, ], method="rf", trControl=trainControl(method="cv",number=10), prox=TRUE, allowParallel=FALSE)
+#stopCluster(cluster)
+```
+
+In order to use all of our training data and at the same having realistic accuracy estimates, we use cross validation. We use 10 folds as that generally is a good compromise to achieve acceptable bias and variance. Building the model took about 2 hours on my machine (2nd gen Core i7).
+
+### Evaluating the model
+
+The error estimates of the random forest are quite promising. (See [Model summary](#model-summary))
+
+The out-of-bag estimate of error rate is 0.44%. This means that, as long as the training dataset is a not-too biased sample of the population, we can expect very-high-accuray estimates.
+
+### Interpreting the model
+
+In general, it's not feasible to clearly explain how exactly a given ramdom forest makes it prediction. At least not without describing the large amount of parameters in the algorithm. We can however check if there are features that have a more prominent role than others. (See [Variable importance](#variable-importance))
+
+Again, the lack of a precise data dictionary is a bit troublesome, but we can still observe that the sensors in the belt (7 occurrences), dumbbell (8 occurrences) and forearm (3 occurrences) are dominant in the 20 most important covariants. Also, quite a drop-off is visible after the first 6 covariants. 
+
+This holds some promise should there be a need to further reduce the number of features to make for a faster and more compact model. And perhaps more importantly, it might be that we could do with attaching fewer sensors altogether. Then again, a notable decrease in predictive power is to be expected since all of the features clearly contribute to the information gain.
+
+Of note from the confusion matrix is that the class A error is about an order of magnitude smaller than the error for the other classes. In fact, there's a 99.80% sensitivity and 99.99% specificity for class A vs class B, C, D, E. This is in the training set and the numbers are not out-of-sample estimates, but it still indicates that testing class A (good) vs the other classes (bad) should work very well.
+
+### Applying & verifying the model
+
+The last thing to do, now that we have a model and a decent level of confidence in it, is applying it to the test set:
+
+```{r}
+predict(rfFit, testingClean)
+```
+
+Apparently, we have a nice mix of predicted classes. This may not be a test dataset in the typical machine-learning sense of the word since we don't know the actual classes (and the set is too small). However, according to the Coursera quiz results, these are the expected outcomes.
+
+# Appendix
+
+## Patterns in the time-component of the data
+
+```{r, echo=FALSE}
+library(ggplot2)
+ggplot(training, aes(x=X, y=raw_timestamp_part_1, color=classe)) + geom_point(shape=1) +
+  ggtitle("timestamps by index") + xlab("index") + ylab("raw timestamp")
+```
+
+
+## Model summary
+
+```{r}
+print(rfFit)
+print(rfFit$finalModel)
+
+cm <- rfFit$finalModel$confusion
+sens <- 100 * cm[1,1] / sum(cm[,1])
+spec <- 100 * sum(cm[c(2:5),2:5]) / sum(cm[c(1:5),2:5])
+print(c(sens, spec))
+```
+
+## Variable importance
+
+```{r}
+data.frame(overall=rfFit$finalModel$importance[order(rfFit$finalModel$importance, decreasing = TRUE),])
+```
